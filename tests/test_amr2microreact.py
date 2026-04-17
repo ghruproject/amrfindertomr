@@ -709,11 +709,18 @@ class TestBuildMicroreactProjectJson:
         project = build_microreact_project_json(csv_data)
 
         import base64
-        url = project["files"]["data-file-1"]["url"]
-        assert url.startswith("data:text/csv;base64,")
-        encoded = url.split(",", 1)[1]
+        blob = project["files"]["data-file-1"]["blob"]
+        assert blob.startswith("data:application/octet-stream;base64,")
+        encoded = blob.split(",", 1)[1]
         decoded = base64.b64decode(encoded).decode()
         assert decoded == csv_data
+
+    def test_file_has_type_and_size(self):
+        csv_data = "id,gene1\nsample1,yes\n"
+        project = build_microreact_project_json(csv_data)
+        f = project["files"]["data-file-1"]
+        assert f["type"] == "data"
+        assert f["size"] == len(csv_data.encode())
 
     def test_without_tree(self):
         csv_data = "id,gene1\nsample1,yes\n"
@@ -729,11 +736,12 @@ class TestBuildMicroreactProjectJson:
         assert "trees" in project
         assert "tree-file-1" in project["files"]
         assert project["files"]["tree-file-1"]["format"] == "text/x-nh"
+        assert project["files"]["tree-file-1"]["type"] == "tree"
 
         import base64
-        url = project["files"]["tree-file-1"]["url"]
-        assert url.startswith("data:text/x-nh;base64,")
-        encoded = url.split(",", 1)[1]
+        blob = project["files"]["tree-file-1"]["blob"]
+        assert blob.startswith("data:application/octet-stream;base64,")
+        encoded = blob.split(",", 1)[1]
         decoded = base64.b64decode(encoded).decode()
         assert decoded == tree_data
 

@@ -401,13 +401,15 @@ def build_microreact_project_json(
     project_name: str = "AMR Microreact Project",
 ) -> dict:
     """Build a Microreact .microreact JSON document with embedded data."""
-    csv_b64 = base64.b64encode(csv_data.encode()).decode()
+    csv_bytes = csv_data.encode()
+    csv_b64 = base64.b64encode(csv_bytes).decode()
 
     project = {
         "schema": "https://microreact.org/schema/v1.json",
-        "meta": {"name": project_name},
+        "charts": {},
         "datasets": {
             "dataset-1": {
+                "id": "dataset-1",
                 "file": "data-file-1",
                 "idFieldName": "id",
             }
@@ -417,24 +419,37 @@ def build_microreact_project_json(
                 "id": "data-file-1",
                 "format": "text/csv",
                 "name": "metadata.csv",
-                "url": f"data:text/csv;base64,{csv_b64}",
+                "type": "data",
+                "size": len(csv_bytes),
+                "blob": f"data:application/octet-stream;base64,{csv_b64}",
             }
         },
+        "filters": {},
+        "maps": {},
+        "matrices": {},
+        "meta": {"name": project_name},
+        "networks": {},
+        "notes": {},
+        "styles": {},
         "tables": {
             "table-1": {
                 "dataset": "dataset-1",
                 "title": "AMR Metadata",
             }
         },
+        "timelines": {},
     }
 
     if tree_data:
-        tree_b64 = base64.b64encode(tree_data.encode()).decode()
+        tree_bytes = tree_data.encode()
+        tree_b64 = base64.b64encode(tree_bytes).decode()
         project["files"]["tree-file-1"] = {
             "id": "tree-file-1",
             "format": "text/x-nh",
             "name": "tree.nwk",
-            "url": f"data:text/x-nh;base64,{tree_b64}",
+            "type": "tree",
+            "size": len(tree_bytes),
+            "blob": f"data:application/octet-stream;base64,{tree_b64}",
         }
         project["trees"] = {
             "tree-1": {
