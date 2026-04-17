@@ -465,6 +465,8 @@ def upload_to_microreact(
         headers={
             "Content-Type": "application/json; charset=utf-8",
             "Access-Token": api_key,
+            "User-Agent": "amr2microreact/1.0 (https://github.com/ghruproject/amrfindertomr)",
+            "Accept": "application/json",
         },
         method="POST",
     )

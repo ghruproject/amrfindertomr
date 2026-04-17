@@ -234,7 +234,7 @@ if uploaded_files:
             st.markdown(
                 "Create a Microreact project directly from here. "
                 "Get your API access token from "
-                "[your Microreact account settings](https://microreact.org/my-account)."
+                "[your Microreact account settings](https://microreact.org/my-account/settings)."
             )
 
             # localStorage persistence for API key
