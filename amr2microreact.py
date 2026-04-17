@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 """
 amr2microreact.py - Convert AMR tool output(s) to Microreact-compatible CSV.
 
