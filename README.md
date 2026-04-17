@@ -14,7 +14,7 @@ Convert AMR tool output into [Microreact](https://microreact.org)-compatible met
 
 **No install required** — use the hosted web app:
 
-**[amrfindertomr.streamlit.app](https://amrfindertomr.streamlit.app)**
+**[amrfindertomr-web.streamlit.app](https://amrfindertomr-web.streamlit.app)**
 
 Upload your AMR output files, adjust filters, preview the metadata table, download the CSV, or create a Microreact project directly from your browser.
 
