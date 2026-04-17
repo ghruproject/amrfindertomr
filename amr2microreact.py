@@ -398,17 +398,27 @@ def _build_pane_layout(has_tree: bool) -> dict:
     if has_tree:
         layout_children = [
             {
-                "type": "tabset",
-                "weight": 60,
+                "type": "row",
                 "children": [
-                    {"type": "tab", "id": "tree-1", "name": "Tree", "component": "Tree"}
+                    {
+                        "type": "tabset",
+                        "weight": 60,
+                        "children": [
+                            {"type": "tab", "id": "tree-1", "name": "Tree", "component": "Tree"}
+                        ],
+                    },
                 ],
             },
             {
-                "type": "tabset",
-                "weight": 40,
+                "type": "row",
                 "children": [
-                    {"type": "tab", "id": "table-1", "name": "Metadata", "component": "Table"}
+                    {
+                        "type": "tabset",
+                        "weight": 40,
+                        "children": [
+                            {"type": "tab", "id": "table-1", "name": "Metadata", "component": "Table"}
+                        ],
+                    },
                 ],
             },
         ]
