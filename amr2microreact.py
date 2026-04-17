@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """
-amr2microreact.py - Convert AMRFinderPlus output(s) to Microreact-compatible CSV.
+amr2microreact.py - Convert AMR tool output(s) to Microreact-compatible CSV.
 
-Reads one or more AMRFinderPlus TSV output files and produces a CSV with:
+Supports: AMRFinderPlus, ABRicate, ResFinder, CARD RGI.
+Auto-detects input format from column headers.
+
+Reads one or more output files and produces a CSV with:
   - id column (sample name, matching tree tip labels)
   - Drug class summary columns (comma-separated gene lists per class)
+  - Drug class __colour columns for Microreact colouring
   - Individual gene presence/absence columns (yes/no)
 
 Usage:
@@ -19,14 +23,146 @@ from collections import defaultdict
 from pathlib import Path
 
 
-def parse_amrfinder(filepath: Path) -> list[dict]:
-    """Parse a single AMRFinderPlus TSV output file."""
-    rows = []
+# ---------------------------------------------------------------------------
+# Colour scheme for Microreact
+# ---------------------------------------------------------------------------
+
+# Colours for drug class summary columns
+COLOUR_HAS_GENES = "#E53935"   # red - resistance genes present
+COLOUR_NO_GENES = "#43A047"    # green - no resistance genes
+# Colours for gene presence columns
+COLOUR_PRESENT = "#E53935"     # red
+COLOUR_ABSENT = "#EEEEEE"     # light grey
+
+
+# ---------------------------------------------------------------------------
+# Format detection and parsing
+# ---------------------------------------------------------------------------
+
+# Signature columns used to identify each format
+FORMAT_SIGNATURES = {
+    "amrfinderplus": {"Element symbol", "Element name", "Scope"},
+    "abricate": {"#FILE", "GENE", "%COVERAGE", "%IDENTITY"},
+    "resfinder": {"Resistance gene", "Phenotype", "Accession no."},
+    "rgi": {"Best_Hit_ARO", "Drug Class", "Best_Hit_Identity"},
+}
+
+
+def detect_format(filepath: Path) -> str:
+    """Auto-detect the AMR tool format from column headers."""
     with open(filepath) as f:
-        reader = csv.DictReader(f, delimiter="\t")
-        for row in reader:
-            rows.append(row)
-    return rows
+        header_line = f.readline().strip()
+
+    # Handle tab-separated and comma-separated
+    if "\t" in header_line:
+        columns = set(header_line.split("\t"))
+    else:
+        columns = set(header_line.split(","))
+
+    for fmt, signature in FORMAT_SIGNATURES.items():
+        if signature.issubset(columns):
+            return fmt
+
+    return "unknown"
+
+
+def parse_tsv(filepath: Path) -> tuple[list[dict], str]:
+    """Parse a TSV/CSV file and return (rows, delimiter)."""
+    with open(filepath) as f:
+        first_line = f.readline()
+    delimiter = "\t" if "\t" in first_line else ","
+    with open(filepath) as f:
+        reader = csv.DictReader(f, delimiter=delimiter)
+        return list(reader), delimiter
+
+
+def normalize_row(row: dict, fmt: str, filepath: Path) -> dict | None:
+    """Normalize a row from any supported format into a common structure.
+
+    Returns a dict with keys: sample, gene, drug_class, element_type,
+    coverage, identity, scope. Returns None if the row should be skipped.
+    """
+    if fmt == "amrfinderplus":
+        gene = row.get("Element symbol", "")
+        if not gene or gene == "NA":
+            return None
+        return {
+            "sample": row.get("Name", "") or filepath.stem.replace(".result", "").replace("_amr", ""),
+            "gene": gene,
+            "drug_class": row.get("Class", "NA"),
+            "element_type": row.get("Type", ""),
+            "coverage": _parse_float(row.get("% Coverage of reference", "0")),
+            "identity": _parse_float(row.get("% Identity to reference", "0")),
+            "scope": row.get("Scope", ""),
+        }
+
+    elif fmt == "abricate":
+        gene = row.get("GENE", "")
+        if not gene:
+            return None
+        sample = row.get("#FILE", "")
+        if sample:
+            sample = Path(sample).stem.replace(".result", "")
+        else:
+            sample = filepath.stem.replace("_abricate", "")
+        return {
+            "sample": sample,
+            "gene": gene,
+            "drug_class": row.get("RESISTANCE", row.get("PRODUCT", "NA")),
+            "element_type": "AMR",
+            "coverage": _parse_float(row.get("%COVERAGE", "0")),
+            "identity": _parse_float(row.get("%IDENTITY", "0")),
+            "scope": "",
+        }
+
+    elif fmt == "resfinder":
+        gene = row.get("Resistance gene", "")
+        if not gene:
+            return None
+        return {
+            "sample": filepath.stem.replace("_resfinder", "").replace("ResFinder_results_tab", ""),
+            "gene": gene,
+            "drug_class": row.get("Phenotype", "NA"),
+            "element_type": "AMR",
+            "coverage": _parse_float(row.get("Coverage", "0").rstrip("%")),
+            "identity": _parse_float(row.get("Identity", "0").rstrip("%")),
+            "scope": "",
+        }
+
+    elif fmt == "rgi":
+        gene = row.get("Best_Hit_ARO", "")
+        if not gene:
+            return None
+        orf = row.get("ORF_ID", "")
+        sample = orf.split(" ")[0] if orf else filepath.stem.replace("_rgi", "")
+        # Clean up contig prefix from sample name
+        if "_NODE_" in sample or "_contig" in sample:
+            parts = sample.split("_NODE_")
+            if len(parts) > 1:
+                sample = parts[0]
+            else:
+                parts = sample.split("_contig")
+                if len(parts) > 1:
+                    sample = parts[0]
+        return {
+            "sample": sample,
+            "gene": gene,
+            "drug_class": row.get("Drug Class", "NA"),
+            "element_type": row.get("Model_type", "AMR"),
+            "coverage": 100.0,  # RGI doesn't report coverage directly
+            "identity": _parse_float(row.get("Best_Hit_Identity", "0")),
+            "scope": row.get("Cut_Off", ""),
+        }
+
+    return None
+
+
+def _parse_float(val: str) -> float:
+    """Safely parse a float, returning 0.0 on failure."""
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return 0.0
 
 
 def extract_sample_name(filepath: Path, rows: list[dict]) -> str:
@@ -35,7 +171,6 @@ def extract_sample_name(filepath: Path, rows: list[dict]) -> str:
         name = rows[0].get("Name", "")
         if name:
             return name
-    # Fall back to filename without extension
     return filepath.stem.replace(".result", "").replace("_amr", "")
 
 
@@ -47,6 +182,7 @@ def collect_inputs(input_paths: list[str]) -> list[Path]:
         if path.is_dir():
             files.extend(sorted(path.glob("*.tsv")))
             files.extend(sorted(path.glob("*.txt")))
+            files.extend(sorted(path.glob("*.csv")))
         elif path.is_file():
             files.append(path)
         else:
@@ -54,49 +190,80 @@ def collect_inputs(input_paths: list[str]) -> list[Path]:
     return files
 
 
-def build_metadata(input_files: list[Path], amr_only: bool = False):
-    """Build the metadata table from AMRFinderPlus outputs.
+def build_metadata(
+    input_files: list[Path],
+    amr_only: bool = False,
+    min_coverage: float = 0.0,
+    min_identity: float = 0.0,
+    scope_filter: str | None = None,
+    class_filter: set[str] | None = None,
+):
+    """Build the metadata table from AMR tool outputs.
 
-    Returns (rows, drug_classes, all_genes) where:
-      - rows: list of dicts with sample data
+    Args:
+        input_files: List of input file paths.
+        amr_only: Only include AMR-type genes (exclude STRESS, VIRULENCE).
+        min_coverage: Minimum coverage % threshold.
+        min_identity: Minimum identity % threshold.
+        scope_filter: Only include genes with this scope (e.g. "core", "plus").
+        class_filter: Only include these drug classes (set of strings).
+
+    Returns (samples, drug_classes, all_genes, formats_detected) where:
+      - samples: dict of sample data
       - drug_classes: sorted list of drug class names
       - all_genes: sorted list of all gene symbols
+      - formats_detected: set of format names encountered
     """
-    samples = {}  # sample_name -> {class -> set(genes), genes -> set}
+    samples = {}
     all_classes = set()
     all_genes = set()
+    formats_detected = set()
 
     for filepath in input_files:
-        rows = parse_amrfinder(filepath)
+        fmt = detect_format(filepath)
+        if fmt == "unknown":
+            print(f"Warning: Unknown format for {filepath}, skipping", file=sys.stderr)
+            continue
+
+        formats_detected.add(fmt)
+        rows, _ = parse_tsv(filepath)
         if not rows:
             continue
 
-        sample_name = extract_sample_name(filepath, rows)
-        if sample_name not in samples:
-            samples[sample_name] = {
-                "classes": defaultdict(set),
-                "genes": set(),
-                "filepath": filepath,
-            }
-
         for row in rows:
-            scope = row.get("Scope", "")
-            element_type = row.get("Type", "")
-            gene = row.get("Element symbol", "")
-            drug_class = row.get("Class", "")
-            subclass = row.get("Subclass", "")
-
-            if not gene or gene == "NA":
+            normalized = normalize_row(row, fmt, filepath)
+            if normalized is None:
                 continue
 
-            # Optionally filter to AMR only (skip STRESS, VIRULENCE)
+            sample_name = normalized["sample"]
+            gene = normalized["gene"]
+            drug_class = normalized["drug_class"]
+            element_type = normalized["element_type"]
+            coverage = normalized["coverage"]
+            identity = normalized["identity"]
+            scope = normalized["scope"]
+
+            # Apply filters
             if amr_only and element_type not in ("AMR",):
                 continue
+            if coverage < min_coverage:
+                continue
+            if identity < min_identity:
+                continue
+            if scope_filter and scope and scope.lower() != scope_filter.lower():
+                continue
+            if class_filter and drug_class not in class_filter:
+                continue
+
+            if sample_name not in samples:
+                samples[sample_name] = {
+                    "classes": defaultdict(set),
+                    "genes": set(),
+                }
 
             samples[sample_name]["genes"].add(gene)
             all_genes.add(gene)
 
-            # Use subclass if available and different from class
             if drug_class and drug_class != "NA":
                 samples[sample_name]["classes"][drug_class].add(gene)
                 all_classes.add(drug_class)
@@ -104,7 +271,7 @@ def build_metadata(input_files: list[Path], amr_only: bool = False):
     drug_classes = sorted(all_classes)
     gene_list = sorted(all_genes)
 
-    return samples, drug_classes, gene_list
+    return samples, drug_classes, gene_list, formats_detected
 
 
 def sanitize_column_name(name: str) -> str:
@@ -119,30 +286,40 @@ def write_csv(
     drug_classes: list[str],
     gene_list: list[str],
     output_path: Path,
+    add_colours: bool = True,
 ):
     """Write the Microreact-compatible CSV."""
-    # Build header
     header = ["id"]
-    # Drug class summary columns
+    # Drug class summary columns + optional colour columns
     for dc in drug_classes:
-        header.append(sanitize_column_name(dc))
-    # Individual gene columns
+        col = sanitize_column_name(dc)
+        header.append(col)
+        if add_colours:
+            header.append(f"{col}__colour")
+    # Individual gene columns + optional colour columns
     for gene in gene_list:
-        header.append(sanitize_column_name(gene))
+        col = sanitize_column_name(gene)
+        header.append(col)
+        if add_colours:
+            header.append(f"{col}__colour")
 
     rows_out = []
     for sample_name in sorted(samples.keys()):
         sdata = samples[sample_name]
         row = [sample_name]
 
-        # Drug class summaries (comma-separated gene lists)
         for dc in drug_classes:
             genes_in_class = sdata["classes"].get(dc, set())
-            row.append(",".join(sorted(genes_in_class)) if genes_in_class else "NA")
+            summary = ",".join(sorted(genes_in_class)) if genes_in_class else "NA"
+            row.append(summary)
+            if add_colours:
+                row.append(COLOUR_HAS_GENES if genes_in_class else COLOUR_NO_GENES)
 
-        # Individual gene presence
         for gene in gene_list:
-            row.append("yes" if gene in sdata["genes"] else "no")
+            present = gene in sdata["genes"]
+            row.append("yes" if present else "no")
+            if add_colours:
+                row.append(COLOUR_PRESENT if present else COLOUR_ABSENT)
 
         rows_out.append(row)
 
@@ -156,18 +333,22 @@ def write_csv(
         f"  {len(drug_classes)} drug class columns, {len(gene_list)} gene columns",
         file=sys.stderr,
     )
+    if add_colours:
+        print("  Microreact __colour columns included", file=sys.stderr)
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Convert AMRFinderPlus output to Microreact metadata CSV"
+        description="Convert AMR tool output to Microreact metadata CSV. "
+        "Supports AMRFinderPlus, ABRicate, ResFinder, and CARD RGI. "
+        "Format is auto-detected."
     )
     parser.add_argument(
         "-i",
         "--input",
         nargs="+",
         required=True,
-        help="Input AMRFinderPlus TSV file(s) or directory containing them",
+        help="Input file(s) or directory containing them",
     )
     parser.add_argument(
         "-o",
@@ -180,6 +361,35 @@ def main():
         action="store_true",
         help="Only include AMR genes (exclude STRESS, VIRULENCE)",
     )
+    parser.add_argument(
+        "--min-coverage",
+        type=float,
+        default=0.0,
+        help="Minimum coverage %% threshold (default: 0)",
+    )
+    parser.add_argument(
+        "--min-identity",
+        type=float,
+        default=0.0,
+        help="Minimum identity %% threshold (default: 0)",
+    )
+    parser.add_argument(
+        "--scope",
+        choices=["core", "plus"],
+        default=None,
+        help="Only include genes with this scope (AMRFinderPlus only)",
+    )
+    parser.add_argument(
+        "--classes",
+        nargs="+",
+        default=None,
+        help="Only include these drug classes",
+    )
+    parser.add_argument(
+        "--no-colours",
+        action="store_true",
+        help="Do not add __colour columns for Microreact",
+    )
     args = parser.parse_args()
 
     input_files = collect_inputs(args.input)
@@ -187,10 +397,25 @@ def main():
         print("Error: No input files found", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Processing {len(input_files)} AMRFinderPlus output files...", file=sys.stderr)
+    print(f"Processing {len(input_files)} files...", file=sys.stderr)
 
-    samples, drug_classes, gene_list = build_metadata(input_files, args.amr_only)
-    write_csv(samples, drug_classes, gene_list, Path(args.output))
+    class_filter = set(args.classes) if args.classes else None
+    samples, drug_classes, gene_list, formats = build_metadata(
+        input_files,
+        amr_only=args.amr_only,
+        min_coverage=args.min_coverage,
+        min_identity=args.min_identity,
+        scope_filter=args.scope,
+        class_filter=class_filter,
+    )
+
+    print(f"  Formats detected: {', '.join(sorted(formats))}", file=sys.stderr)
+
+    write_csv(
+        samples, drug_classes, gene_list,
+        Path(args.output),
+        add_colours=not args.no_colours,
+    )
 
 
 if __name__ == "__main__":

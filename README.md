@@ -1,6 +1,14 @@
+<p align="center">
+  <img src="logo.svg" alt="amr2microreact logo" width="120"/>
+</p>
+
 # amr2microreact
 
-Convert [AMRFinderPlus](https://github.com/ncbi/amr) output into [Microreact](https://microreact.org)-compatible metadata for interactive visualization with phylogenetic trees.
+[![CI](https://github.com/ghruproject/amrfindertomr/actions/workflows/ci.yml/badge.svg)](https://github.com/ghruproject/amrfindertomr/actions/workflows/ci.yml)
+
+Convert AMR tool output into [Microreact](https://microreact.org)-compatible metadata for interactive visualization with phylogenetic trees.
+
+**Supports:** [AMRFinderPlus](https://github.com/ncbi/amr) | [ABRicate](https://github.com/tseemann/abricate) | [ResFinder](https://cge.food.dtu.dk/services/ResFinder/) | [CARD RGI](https://github.com/arpcard/rgi) — format auto-detected.
 
 ## Web App
 
@@ -8,86 +16,82 @@ Convert [AMRFinderPlus](https://github.com/ncbi/amr) output into [Microreact](ht
 
 **[amrfindertomr.streamlit.app](https://amrfindertomr.streamlit.app)**
 
-Upload your AMRFinderPlus TSV files, preview the metadata table, and download the Microreact-ready CSV directly from your browser.
+Upload your AMR output files, adjust filters, preview the metadata table, and download the Microreact-ready CSV directly from your browser.
 
-## What it does
+## Features
 
-Takes one or more AMRFinderPlus TSV output files and produces a single CSV with:
-
-- **`id`** column — sample identifiers matching your tree tip labels
-- **Drug class summary columns** — comma-separated gene lists per antimicrobial class (e.g. `BETA-LACTAM`, `AMINOGLYCOSIDE`)
-- **Gene presence/absence columns** — `yes`/`no` for each detected gene across all samples
-
-Upload this CSV alongside a Newick tree to [Microreact](https://microreact.org) to get interactive metadata blocks with your phylogeny.
-
-## Command-line usage
-
-For batch processing or integration into pipelines, use the CLI directly.
-
-### Setup
-
-Requires [pixi](https://pixi.sh):
-
-```bash
-pixi install
-```
-
-This installs Python, pandas, and AMRFinderPlus.
-
-For tree generation, [mashtree](https://github.com/lskatz/mashtree) is used via Docker:
-
-```bash
-docker pull staphb/mashtree
-```
-
-### 1. Run AMRFinderPlus on your assemblies
-
-```bash
-# Single sample
-pixi run amrfinder --nucleotide sample.fasta --name sample_id -o sample_amr.tsv
-
-# Batch (parallel)
-for f in assemblies/*.fasta; do
-  name=$(basename "$f" .fasta)
-  pixi run amrfinder --nucleotide "$f" --name "$name" -o "amr_results/${name}_amr.tsv" &
-done
-wait
-```
-
-### 2. Convert to Microreact format
-
-```bash
-# From a directory of AMRFinderPlus outputs
-pixi run python amr2microreact.py -i amr_results/ -o microreact_metadata.csv
-
-# From specific files
-pixi run python amr2microreact.py -i sample1_amr.tsv sample2_amr.tsv -o metadata.csv
-
-# AMR genes only (exclude stress/virulence)
-pixi run python amr2microreact.py -i amr_results/ -o metadata.csv --amr-only
-```
-
-### 3. Generate a tree (optional)
-
-```bash
-docker run -v $(pwd)/assemblies:/data staphb/mashtree \
-  mashtree /data/*.fasta > tree.nwk
-```
-
-### 4. Upload to Microreact
-
-Go to [microreact.org](https://microreact.org), upload your `microreact_metadata.csv` and `tree.nwk`, and explore your AMR data interactively.
+- **Multi-format support** — auto-detects AMRFinderPlus, ABRicate, ResFinder, and CARD RGI from column headers. Mix formats in a single run.
+- **Microreact colour columns** — auto-generates `__colour` columns (red = resistance genes present, green = absent) for instant visual mapping.
+- **Filtering** — filter by scope (core/plus), drug class, minimum coverage %, and minimum identity %.
+- **Scales to 400+ samples** — handles large datasets efficiently.
 
 ## Output format
 
-| id | BETA.LACTAM | AMINOGLYCOSIDE | blaTEM.1 | aadA1 | ... |
-|----|-------------|----------------|----------|-------|-----|
-| sample1 | blaTEM-1 | aadA1 | yes | yes | ... |
-| sample2 | NA | aadA1,aph(6)-Id | no | yes | ... |
+| id | BETA.LACTAM | BETA.LACTAM__colour | blaTEM.1 | blaTEM.1__colour | ... |
+|----|-------------|---------------------|----------|------------------|-----|
+| sample1 | blaTEM-1 | #E53935 | yes | #E53935 | ... |
+| sample2 | NA | #43A047 | no | #EEEEEE | ... |
 
-- Drug class columns contain comma-separated gene names or `NA`
-- Gene columns contain `yes` or `no`
-- The `id` column must match tree tip labels for Microreact to link them
+- Drug class columns: comma-separated gene names or `NA`
+- Gene columns: `yes` / `no`
+- `__colour` columns: hex colours for Microreact rendering
+- `id` column must match tree tip labels
+
+## Command-line usage
+
+### Setup
+
+```bash
+# Install pixi (https://pixi.sh), then:
+pixi install
+```
+
+### Quick start
+
+```bash
+# Convert AMRFinderPlus outputs (auto-detected)
+pixi run python amr2microreact.py -i amr_results/ -o metadata.csv
+
+# Mix formats - auto-detected
+pixi run python amr2microreact.py -i amrfinder.tsv abricate.tsv rgi.txt -o metadata.csv
+
+# Filter: AMR only, min 80% coverage, min 90% identity
+pixi run python amr2microreact.py -i results/ -o metadata.csv \
+  --amr-only --min-coverage 80 --min-identity 90
+
+# Filter by scope and drug class
+pixi run python amr2microreact.py -i results/ -o metadata.csv \
+  --scope core --classes BETA-LACTAM AMINOGLYCOSIDE
+
+# Disable colour columns
+pixi run python amr2microreact.py -i results/ -o metadata.csv --no-colours
+```
+
+### Generate a tree (optional)
+
+```bash
+docker run -v $(pwd)/assemblies:/data staphb/mashtree \
+  bash -c "mashtree /data/*.fasta" > tree.nwk
+```
+
+### Upload to Microreact
+
+Go to [microreact.org](https://microreact.org), upload your `metadata.csv` and `tree.nwk`.
+
+## Examples
+
+The `examples/` directory contains 3 AMRFinderPlus output files for testing:
+
+```bash
+pixi run python amr2microreact.py -i examples/ -o test_output.csv
+```
+
+## Development
+
+```bash
+pixi install
+pixi run pytest tests/ -v
+```
 
 ## License
 

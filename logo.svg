@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <linearGradient id="pillGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4CAF50"/>
+      <stop offset="100%" stop-color="#388E3C"/>
+    </linearGradient>
+    <linearGradient id="nodeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2196F3"/>
+      <stop offset="100%" stop-color="#1565C0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Petri dish / capsule (left side) -->
+  <ellipse cx="58" cy="100" rx="38" ry="38" fill="none" stroke="url(#pillGrad)" stroke-width="4"/>
+  <ellipse cx="58" cy="100" rx="28" ry="28" fill="url(#pillGrad)" opacity="0.15"/>
+  <!-- Bacteria-like dots inside dish -->
+  <circle cx="48" cy="92" r="4" fill="#4CAF50" opacity="0.7"/>
+  <circle cx="62" cy="88" r="3" fill="#4CAF50" opacity="0.6"/>
+  <circle cx="55" cy="105" r="3.5" fill="#4CAF50" opacity="0.7"/>
+  <circle cx="68" cy="100" r="2.5" fill="#4CAF50" opacity="0.5"/>
+  <circle cx="50" cy="110" r="2.5" fill="#4CAF50" opacity="0.6"/>
+  <circle cx="65" cy="112" r="3" fill="#4CAF50" opacity="0.5"/>
+
+  <!-- Arrow -->
+  <line x1="102" y1="100" x2="122" y2="100" stroke="#78909C" stroke-width="3" stroke-linecap="round"/>
+  <polyline points="117,94 124,100 117,106" fill="none" stroke="#78909C" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Network / tree graph (right side) -->
+  <!-- Edges -->
+  <line x1="152" y1="72" x2="152" y2="100" stroke="#2196F3" stroke-width="2.5" opacity="0.5"/>
+  <line x1="152" y1="100" x2="138" y2="128" stroke="#2196F3" stroke-width="2.5" opacity="0.5"/>
+  <line x1="152" y1="100" x2="166" y2="128" stroke="#2196F3" stroke-width="2.5" opacity="0.5"/>
+  <line x1="152" y1="72" x2="138" y2="56" stroke="#2196F3" stroke-width="2.5" opacity="0.5"/>
+  <line x1="152" y1="72" x2="166" y2="56" stroke="#2196F3" stroke-width="2.5" opacity="0.5"/>
+
+  <!-- Nodes -->
+  <circle cx="152" cy="100" r="7" fill="url(#nodeGrad)"/>
+  <circle cx="152" cy="72" r="6" fill="url(#nodeGrad)"/>
+  <circle cx="138" cy="128" r="5" fill="url(#nodeGrad)"/>
+  <circle cx="166" cy="128" r="5" fill="url(#nodeGrad)"/>
+  <circle cx="138" cy="56" r="4.5" fill="url(#nodeGrad)"/>
+  <circle cx="166" cy="56" r="4.5" fill="url(#nodeGrad)"/>
+</svg>
