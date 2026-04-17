@@ -66,25 +66,28 @@ pixi run python amr2microreact.py -i results/ -o metadata.csv \
 
 # Disable colour columns
 pixi run python amr2microreact.py -i results/ -o metadata.csv --no-colours
+
+# Use a different colour palette
+pixi run python amr2microreact.py -i results/ -o metadata.csv --colour-palette purple-teal
 ```
 
-### Create a Microreact project via API
+Available palettes: `default` (red/green), `blue-grey`, `purple-teal`, `orange-blue`, `pink-green`, `amber-indigo`.
 
-You can create a Microreact project directly from the command line. Get your API access token from [your Microreact account settings](https://microreact.org/my-account).
+### Export to Microreact
 
 ```bash
-# Pass API key directly
+# Save a .microreact file (drag and drop onto microreact.org)
+pixi run python amr2microreact.py -i results/ -o metadata.csv \
+  --tree tree.nwk --output-microreact project.microreact
+
+# Or create a project via API (pass key or set MICROREACT_API_KEY env var)
 pixi run python amr2microreact.py -i results/ -o metadata.csv \
   --tree tree.nwk \
   --microreact-api-key YOUR_TOKEN \
   --project-name "My AMR Study"
-
-# Or use an environment variable
-export MICROREACT_API_KEY=your_token
-pixi run python amr2microreact.py -i results/ -o metadata.csv --tree tree.nwk
 ```
 
-The CSV is always saved locally. If an API key is provided, the project is also created on Microreact and the URL is printed to stderr.
+The CSV is always saved locally. The `--output-microreact` flag generates a ready-to-upload `.microreact` file with embedded data and tree.
 
 ### Generate a tree (optional)
 

@@ -32,12 +32,22 @@ from pathlib import Path
 # Colour scheme for Microreact
 # ---------------------------------------------------------------------------
 
-# Colours for drug class summary columns
+# Default colours for drug class summary columns
 COLOUR_HAS_GENES = "#E53935"   # red - resistance genes present
 COLOUR_NO_GENES = "#43A047"    # green - no resistance genes
-# Colours for gene presence columns
+# Default colours for gene presence columns
 COLOUR_PRESENT = "#E53935"     # red
 COLOUR_ABSENT = "#EEEEEE"     # light grey
+
+# Named colour palettes
+COLOUR_PALETTES = {
+    "default": {"present": "#E53935", "absent_class": "#43A047", "absent_gene": "#EEEEEE"},
+    "blue-grey": {"present": "#1565C0", "absent_class": "#78909C", "absent_gene": "#ECEFF1"},
+    "purple-teal": {"present": "#7B1FA2", "absent_class": "#00897B", "absent_gene": "#F3E5F5"},
+    "orange-blue": {"present": "#E65100", "absent_class": "#0277BD", "absent_gene": "#FFF3E0"},
+    "pink-green": {"present": "#C2185B", "absent_class": "#2E7D32", "absent_gene": "#FCE4EC"},
+    "amber-indigo": {"present": "#FF8F00", "absent_class": "#283593", "absent_gene": "#FFF8E1"},
+}
 
 
 # ---------------------------------------------------------------------------
@@ -286,22 +296,31 @@ def sanitize_column_name(name: str) -> str:
     ).replace("-", ".").replace("/", ".")
 
 
+def _resolve_colours(palette: str | None = None) -> tuple[str, str, str]:
+    """Return (present, absent_class, absent_gene) colour hex values."""
+    if palette and palette in COLOUR_PALETTES:
+        p = COLOUR_PALETTES[palette]
+        return p["present"], p["absent_class"], p["absent_gene"]
+    return COLOUR_HAS_GENES, COLOUR_NO_GENES, COLOUR_ABSENT
+
+
 def write_csv(
     samples: dict,
     drug_classes: list[str],
     gene_list: list[str],
     output_path: Path,
     add_colours: bool = True,
+    colour_palette: str | None = None,
 ):
     """Write the Microreact-compatible CSV."""
+    col_present, col_absent_class, col_absent_gene = _resolve_colours(colour_palette)
+
     header = ["id"]
-    # Drug class summary columns + optional colour columns
     for dc in drug_classes:
         col = sanitize_column_name(dc)
         header.append(col)
         if add_colours:
             header.append(f"{col}__colour")
-    # Individual gene columns + optional colour columns
     for gene in gene_list:
         col = sanitize_column_name(gene)
         header.append(col)
@@ -318,13 +337,13 @@ def write_csv(
             summary = ",".join(sorted(genes_in_class)) if genes_in_class else "NA"
             row.append(summary)
             if add_colours:
-                row.append(COLOUR_HAS_GENES if genes_in_class else COLOUR_NO_GENES)
+                row.append(col_present if genes_in_class else col_absent_class)
 
         for gene in gene_list:
             present = gene in sdata["genes"]
             row.append("yes" if present else "no")
             if add_colours:
-                row.append(COLOUR_PRESENT if present else COLOUR_ABSENT)
+                row.append(col_present if present else col_absent_gene)
 
         rows_out.append(row)
 
@@ -347,9 +366,12 @@ def build_csv_string(
     drug_classes: list[str],
     gene_list: list[str],
     add_colours: bool = True,
+    colour_palette: str | None = None,
 ) -> str:
     """Build CSV content as a string (for API upload)."""
     import io
+
+    col_present, col_absent_class, col_absent_gene = _resolve_colours(colour_palette)
 
     header = ["id"]
     for dc in drug_classes:
@@ -375,12 +397,12 @@ def build_csv_string(
             summary = ",".join(sorted(genes_in_class)) if genes_in_class else "NA"
             row.append(summary)
             if add_colours:
-                row.append(COLOUR_HAS_GENES if genes_in_class else COLOUR_NO_GENES)
+                row.append(col_present if genes_in_class else col_absent_class)
         for gene in gene_list:
             present = gene in sdata["genes"]
             row.append("yes" if present else "no")
             if add_colours:
-                row.append(COLOUR_PRESENT if present else COLOUR_ABSENT)
+                row.append(col_present if present else col_absent_gene)
         writer.writerow(row)
 
     return buf.getvalue()
@@ -691,9 +713,20 @@ def main():
         help="Do not add __colour columns for Microreact",
     )
     parser.add_argument(
+        "--colour-palette",
+        choices=list(COLOUR_PALETTES.keys()),
+        default="default",
+        help="Colour palette for Microreact columns (default: red/green)",
+    )
+    parser.add_argument(
         "--tree",
         default=None,
-        help="Newick tree file to include when uploading to Microreact",
+        help="Newick tree file to include in Microreact project",
+    )
+    parser.add_argument(
+        "--output-microreact",
+        default=None,
+        help="Save a .microreact file for drag-and-drop upload to microreact.org",
     )
     parser.add_argument(
         "--microreact-api-key",
@@ -727,21 +760,33 @@ def main():
     print(f"  Formats detected: {', '.join(sorted(formats))}", file=sys.stderr)
 
     add_colours = not args.no_colours
-    write_csv(samples, drug_classes, gene_list, Path(args.output), add_colours=add_colours)
+    palette = args.colour_palette if add_colours else None
+    write_csv(samples, drug_classes, gene_list, Path(args.output),
+              add_colours=add_colours, colour_palette=palette)
+
+    # Read tree if provided
+    tree_data = None
+    if args.tree:
+        tree_path = Path(args.tree)
+        if tree_path.is_file():
+            tree_data = tree_path.read_text()
+        else:
+            print(f"Warning: Tree file {args.tree} not found", file=sys.stderr)
+
+    # Save .microreact file
+    if args.output_microreact:
+        csv_data = build_csv_string(samples, drug_classes, gene_list,
+                                    add_colours=add_colours, colour_palette=palette)
+        project = build_microreact_project_json(csv_data, tree_data, args.project_name)
+        with open(args.output_microreact, "w") as f:
+            json.dump(project, f)
+        print(f"Saved Microreact project to {args.output_microreact}", file=sys.stderr)
 
     # Microreact API upload
     api_key = args.microreact_api_key or os.environ.get("MICROREACT_API_KEY")
     if api_key:
-        csv_data = build_csv_string(samples, drug_classes, gene_list, add_colours=add_colours)
-
-        tree_data = None
-        if args.tree:
-            tree_path = Path(args.tree)
-            if tree_path.is_file():
-                tree_data = tree_path.read_text()
-            else:
-                print(f"Warning: Tree file {args.tree} not found, uploading without tree", file=sys.stderr)
-
+        csv_data = build_csv_string(samples, drug_classes, gene_list,
+                                    add_colours=add_colours, colour_palette=palette)
         print("Uploading to Microreact...", file=sys.stderr)
         try:
             result = upload_to_microreact(csv_data, api_key, tree_data, args.project_name)

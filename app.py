@@ -13,12 +13,11 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from amr2microreact import (
-    COLOUR_ABSENT,
-    COLOUR_HAS_GENES,
-    COLOUR_NO_GENES,
-    COLOUR_PRESENT,
+    COLOUR_PALETTES,
+    _resolve_colours,
     build_csv_string,
     build_metadata,
+    build_microreact_project_json,
     sanitize_column_name,
     upload_to_microreact,
 )
@@ -90,8 +89,25 @@ with st.sidebar:
     add_colours = st.checkbox(
         "Add __colour columns",
         value=True,
-        help="Include Microreact colour columns (red=present, green=absent).",
+        help="Include Microreact colour columns.",
     )
+
+    colour_palette = st.selectbox(
+        "Colour palette",
+        options=list(COLOUR_PALETTES.keys()),
+        index=0,
+        help="Colour scheme for resistance present/absent.",
+        disabled=not add_colours,
+    )
+
+    if add_colours:
+        cp = COLOUR_PALETTES[colour_palette]
+        st.markdown(
+            f'<span style="color:{cp["present"]}">&#9632;</span> Present &nbsp; '
+            f'<span style="color:{cp["absent_class"]}">&#9632;</span> Absent (class) &nbsp; '
+            f'<span style="color:{cp["absent_gene"]}">&#9632;</span> Absent (gene)',
+            unsafe_allow_html=True,
+        )
 
 
 if uploaded_files:
@@ -120,7 +136,9 @@ if uploaded_files:
         )
 
         # Build CSV
-        csv_data = build_csv_string(samples, drug_classes, gene_list, add_colours=add_colours)
+        palette = colour_palette if add_colours else None
+        csv_data = build_csv_string(samples, drug_classes, gene_list,
+                                    add_colours=add_colours, colour_palette=palette)
 
         # Summary metrics
         col1, col2, col3 = st.columns(3)
@@ -175,11 +193,12 @@ if uploaded_files:
                 st.subheader("Gene Presence / Absence Heatmap")
                 heatmap_df = df_clean[gene_cols_in_df].replace({"yes": 1, "no": 0})
 
-                # Use Streamlit's built-in charting - show as a styled dataframe
+                col_present, _, col_absent_gene = _resolve_colours(palette)
                 styled = heatmap_df.style.map(
-                    lambda v: f"background-color: {COLOUR_PRESENT}; color: white"
-                    if v == 1
-                    else f"background-color: {COLOUR_ABSENT}; color: #999"
+                    lambda v, cp=col_present, ca=col_absent_gene:
+                        f"background-color: {cp}; color: white"
+                        if v == 1
+                        else f"background-color: {ca}; color: #999"
                 )
                 st.dataframe(styled, use_container_width=True, height=400)
 
@@ -230,14 +249,43 @@ if uploaded_files:
 
         # --- Tab 3: Export to Microreact ---
         with tab_export:
-            st.subheader("Create a Microreact Project")
-            st.warning(
-                "**Experimental** — API project creation may not work reliably due to "
-                "Cloudflare restrictions on Streamlit Cloud. If it fails, download the CSV "
-                "and tree and upload them manually at [microreact.org](https://microreact.org)."
+            st.subheader("Export to Microreact")
+
+            # .microreact file download (no API key needed)
+            st.markdown("**Option 1:** Download a `.microreact` file and drag it onto [microreact.org](https://microreact.org).")
+
+            tree_file = st.file_uploader(
+                "Upload Newick tree (optional)",
+                type=["nwk", "newick", "tre", "tree", "nhx", "treefile"],
+                help="Tip labels must match the id column in the metadata.",
             )
+
+            project_name = st.text_input(
+                "Project name",
+                value="AMR Microreact Project",
+            )
+
+            tree_data_for_export = None
+            if tree_file:
+                tree_data_for_export = tree_file.getvalue().decode("utf-8")
+
+            project_json = build_microreact_project_json(
+                csv_data, tree_data_for_export, project_name
+            )
+            import json as _json
+            microreact_file = _json.dumps(project_json)
+
+            st.download_button(
+                label="Download .microreact file",
+                data=microreact_file,
+                file_name=f"{project_name.replace(' ', '_')}.microreact",
+                mime="application/json",
+            )
+
+            st.divider()
             st.markdown(
-                "Get your API access token from "
+                "**Option 2:** Create a project via API. "
+                "Get your token from "
                 "[your Microreact account settings](https://microreact.org/my-account/settings)."
             )
 
@@ -274,26 +322,11 @@ if uploaded_files:
                 height=0,
             )
 
-            tree_file = st.file_uploader(
-                "Upload Newick tree (optional)",
-                type=["nwk", "newick", "tre", "tree", "nhx", "treefile"],
-                help="Tip labels must match the id column in the metadata.",
-            )
-
-            project_name = st.text_input(
-                "Project name",
-                value="AMR Microreact Project",
-            )
-
-            if st.button("Create Microreact Project", type="primary", disabled=not api_key):
-                tree_data = None
-                if tree_file:
-                    tree_data = tree_file.getvalue().decode("utf-8")
-
+            if st.button("Create Microreact Project via API", type="primary", disabled=not api_key):
                 with st.spinner("Uploading to Microreact..."):
                     try:
                         result = upload_to_microreact(
-                            csv_data, api_key, tree_data, project_name
+                            csv_data, api_key, tree_data_for_export, project_name
                         )
                         url = result.get("url", "")
                         if url:
