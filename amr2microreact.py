@@ -396,6 +396,7 @@ MICROREACT_API_URL = "https://microreact.org/api/projects/create"
 def _build_pane_layout(has_tree: bool) -> dict:
     """Build the Microreact pane layout model."""
     if has_tree:
+        # Outer row has 1 child (a nested row), nested row stacks vertically
         layout_children = [
             {
                 "type": "row",
@@ -407,11 +408,6 @@ def _build_pane_layout(has_tree: bool) -> dict:
                             {"type": "tab", "id": "tree-1", "name": "Tree", "component": "Tree"}
                         ],
                     },
-                ],
-            },
-            {
-                "type": "row",
-                "children": [
                     {
                         "type": "tabset",
                         "weight": 40,
