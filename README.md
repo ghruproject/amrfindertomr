@@ -16,13 +16,14 @@ Convert AMR tool output into [Microreact](https://microreact.org)-compatible met
 
 **[amrfindertomr.streamlit.app](https://amrfindertomr.streamlit.app)**
 
-Upload your AMR output files, adjust filters, preview the metadata table, and download the Microreact-ready CSV directly from your browser.
+Upload your AMR output files, adjust filters, preview the metadata table, download the CSV, or create a Microreact project directly from your browser.
 
 ## Features
 
 - **Multi-format support** — auto-detects AMRFinderPlus, ABRicate, ResFinder, and CARD RGI from column headers. Mix formats in a single run.
 - **Microreact colour columns** — auto-generates `__colour` columns (red = resistance genes present, green = absent) for instant visual mapping.
 - **Filtering** — filter by scope (core/plus), drug class, minimum coverage %, and minimum identity %.
+- **Microreact API integration** — create Microreact projects directly from the CLI or web app. Upload metadata + tree and get back a shareable URL.
 - **Scales to 400+ samples** — handles large datasets efficiently.
 
 ## Output format
@@ -67,16 +68,30 @@ pixi run python amr2microreact.py -i results/ -o metadata.csv \
 pixi run python amr2microreact.py -i results/ -o metadata.csv --no-colours
 ```
 
+### Create a Microreact project via API
+
+You can create a Microreact project directly from the command line. Get your API access token from [your Microreact account settings](https://microreact.org/my-account).
+
+```bash
+# Pass API key directly
+pixi run python amr2microreact.py -i results/ -o metadata.csv \
+  --tree tree.nwk \
+  --microreact-api-key YOUR_TOKEN \
+  --project-name "My AMR Study"
+
+# Or use an environment variable
+export MICROREACT_API_KEY=your_token
+pixi run python amr2microreact.py -i results/ -o metadata.csv --tree tree.nwk
+```
+
+The CSV is always saved locally. If an API key is provided, the project is also created on Microreact and the URL is printed to stderr.
+
 ### Generate a tree (optional)
 
 ```bash
 docker run -v $(pwd)/assemblies:/data staphb/mashtree \
   bash -c "mashtree /data/*.fasta" > tree.nwk
 ```
-
-### Upload to Microreact
-
-Go to [microreact.org](https://microreact.org), upload your `metadata.csv` and `tree.nwk`.
 
 ## Examples
 
