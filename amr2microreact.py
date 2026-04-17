@@ -26,8 +26,6 @@ import os
 import sys
 from collections import defaultdict
 from pathlib import Path
-from urllib.request import Request, urlopen
-from urllib.error import HTTPError
 
 
 # ---------------------------------------------------------------------------
@@ -434,6 +432,7 @@ def build_microreact_project_json(
         "tables": {
             "table-1": {
                 "dataset": "dataset-1",
+                "file": "data-file-1",
                 "title": "AMR Metadata",
             }
         },
@@ -470,28 +469,35 @@ def upload_to_microreact(
     """Upload data to Microreact and return the response with project URL.
 
     Returns dict with 'url' key on success, or raises an exception.
+    Uses requests if available (better Cloudflare compat), falls back to urllib.
     """
     project_json = build_microreact_project_json(csv_data, tree_data, project_name)
-    body = json.dumps(project_json).encode("utf-8")
 
-    req = Request(
-        MICROREACT_API_URL,
-        data=body,
-        headers={
-            "Content-Type": "application/json; charset=utf-8",
-            "Access-Token": api_key,
-            "User-Agent": "amr2microreact/1.0 (https://github.com/ghruproject/amrfindertomr)",
-            "Accept": "application/json",
-        },
-        method="POST",
-    )
+    headers = {
+        "Content-Type": "application/json; charset=utf-8",
+        "Access-Token": api_key,
+        "User-Agent": "Mozilla/5.0 (compatible; amr2microreact/1.0)",
+        "Accept": "application/json",
+    }
 
     try:
-        with urlopen(req) as resp:
-            return json.loads(resp.read().decode())
-    except HTTPError as e:
-        error_body = e.read().decode() if e.fp else str(e)
-        raise RuntimeError(f"Microreact API error ({e.code}): {error_body}") from e
+        import requests
+        resp = requests.post(MICROREACT_API_URL, json=project_json, headers=headers)
+        if resp.status_code != 200:
+            raise RuntimeError(f"Microreact API error ({resp.status_code}): {resp.text}")
+        return resp.json()
+    except ImportError:
+        from urllib.request import Request, urlopen
+        from urllib.error import HTTPError
+
+        body = json.dumps(project_json).encode("utf-8")
+        req = Request(MICROREACT_API_URL, data=body, headers=headers, method="POST")
+        try:
+            with urlopen(req) as resp:
+                return json.loads(resp.read().decode())
+        except HTTPError as e:
+            error_body = e.read().decode() if e.fp else str(e)
+            raise RuntimeError(f"Microreact API error ({e.code}): {error_body}") from e
 
 
 def main():
