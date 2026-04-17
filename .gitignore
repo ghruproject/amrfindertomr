@@ -1,0 +1,5 @@
+CLAUDE.md
+.pixi/
+test_data/
+*.pyc
+__pycache__/
