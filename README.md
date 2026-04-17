@@ -2,6 +2,14 @@
 
 Convert [AMRFinderPlus](https://github.com/ncbi/amr) output into [Microreact](https://microreact.org)-compatible metadata for interactive visualization with phylogenetic trees.
 
+## Web App
+
+**No install required** — use the hosted web app:
+
+**[amrfindertomr.streamlit.app](https://amrfindertomr.streamlit.app)**
+
+Upload your AMRFinderPlus TSV files, preview the metadata table, and download the Microreact-ready CSV directly from your browser.
+
 ## What it does
 
 Takes one or more AMRFinderPlus TSV output files and produces a single CSV with:
@@ -12,7 +20,11 @@ Takes one or more AMRFinderPlus TSV output files and produces a single CSV with:
 
 Upload this CSV alongside a Newick tree to [Microreact](https://microreact.org) to get interactive metadata blocks with your phylogeny.
 
-## Setup
+## Command-line usage
+
+For batch processing or integration into pipelines, use the CLI directly.
+
+### Setup
 
 Requires [pixi](https://pixi.sh):
 
@@ -27,8 +39,6 @@ For tree generation, [mashtree](https://github.com/lskatz/mashtree) is used via 
 ```bash
 docker pull staphb/mashtree
 ```
-
-## Usage
 
 ### 1. Run AMRFinderPlus on your assemblies
 
