@@ -231,8 +231,12 @@ if uploaded_files:
         # --- Tab 3: Export to Microreact ---
         with tab_export:
             st.subheader("Create a Microreact Project")
+            st.warning(
+                "**Experimental** — API project creation may not work reliably due to "
+                "Cloudflare restrictions on Streamlit Cloud. If it fails, download the CSV "
+                "and tree and upload them manually at [microreact.org](https://microreact.org)."
+            )
             st.markdown(
-                "Create a Microreact project directly from here. "
                 "Get your API access token from "
                 "[your Microreact account settings](https://microreact.org/my-account/settings)."
             )
