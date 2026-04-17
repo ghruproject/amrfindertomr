@@ -393,100 +393,36 @@ def build_csv_string(
 MICROREACT_API_URL = "https://microreact.org/api/projects/create"
 
 
-def build_microreact_project_json(
-    csv_data: str,
-    tree_data: str | None = None,
-    project_name: str = "AMR Microreact Project",
-) -> dict:
-    """Build a Microreact .microreact JSON document with embedded data."""
-    csv_bytes = csv_data.encode()
-    csv_b64 = base64.b64encode(csv_bytes).decode()
-
-    project = {
-        "schema": "https://microreact.org/schema/v1.json",
-        "charts": {},
-        "datasets": {
-            "dataset-1": {
-                "id": "dataset-1",
-                "file": "data-file-1",
-                "idFieldName": "id",
-            }
-        },
-        "files": {
-            "data-file-1": {
-                "id": "data-file-1",
-                "format": "text/csv",
-                "name": "metadata.csv",
-                "type": "data",
-                "size": len(csv_bytes),
-                "blob": f"data:application/octet-stream;base64,{csv_b64}",
-            }
-        },
-        "filters": {},
-        "maps": {},
-        "matrices": {},
-        "meta": {"name": project_name},
-        "networks": {},
-        "notes": {},
-        "styles": {},
-        "tables": {
-            "table-1": {
-                "dataset": "dataset-1",
-                "file": "data-file-1",
-                "title": "AMR Metadata",
-            }
-        },
-        "timelines": {},
-    }
-
-    # Build pane layout
-    if tree_data:
-        tree_bytes = tree_data.encode()
-        tree_b64 = base64.b64encode(tree_bytes).decode()
-        project["files"]["tree-file-1"] = {
-            "id": "tree-file-1",
-            "format": "text/x-nh",
-            "name": "tree.nwk",
-            "type": "tree",
-            "size": len(tree_bytes),
-            "blob": f"data:application/octet-stream;base64,{tree_b64}",
-        }
-        project["trees"] = {
-            "tree-1": {
-                "file": "tree-file-1",
-                "title": "Phylogenetic Tree",
-                "type": "rc",
-            }
-        }
-        # Layout: tree left, table right
+def _build_pane_layout(has_tree: bool) -> dict:
+    """Build the Microreact pane layout model."""
+    if has_tree:
         layout_children = [
             {
                 "type": "tabset",
                 "weight": 60,
                 "children": [
-                    {"type": "tab", "id": "tree-1", "name": "Phylogenetic Tree", "component": "Tree"}
+                    {"type": "tab", "id": "tree-1", "name": "Tree", "component": "Tree"}
                 ],
             },
             {
                 "type": "tabset",
                 "weight": 40,
                 "children": [
-                    {"type": "tab", "id": "table-1", "name": "AMR Metadata", "component": "Table"}
+                    {"type": "tab", "id": "table-1", "name": "Metadata", "component": "Table"}
                 ],
             },
         ]
     else:
-        # Layout: table only
         layout_children = [
             {
                 "type": "tabset",
                 "children": [
-                    {"type": "tab", "id": "table-1", "name": "AMR Metadata", "component": "Table"}
+                    {"type": "tab", "id": "table-1", "name": "Metadata", "component": "Table"}
                 ],
             },
         ]
 
-    project["panes"] = {
+    return {
         "model": {
             "global": {
                 "splitterSize": 2,
@@ -518,6 +454,139 @@ def build_microreact_project_json(
             },
         }
     }
+
+
+def _build_tree_config(file_id: str) -> dict:
+    """Build full Microreact tree panel configuration."""
+    return {
+        "alignLabels": True,
+        "blockHeaderFontSize": 13,
+        "blockPadding": 0,
+        "blocks": [],
+        "blockSize": 14,
+        "branchLengthsDigits": 4,
+        "controls": False,
+        "fontSize": 16,
+        "hideOrphanDataRows": False,
+        "ids": None,
+        "internalLabelsFilterRange": [0, 100],
+        "internalLabelsFontSize": 13,
+        "lasso": False,
+        "nodeSize": 14,
+        "path": None,
+        "roundBranchLengths": True,
+        "scaleLineAlpha": True,
+        "showBlockHeaders": True,
+        "showBlockLabels": False,
+        "showBranchLengths": False,
+        "showEdges": True,
+        "showInternalLabels": False,
+        "showLabels": True,
+        "showLeafLabels": False,
+        "showPiecharts": True,
+        "showShapeBorders": True,
+        "showShapes": True,
+        "styleLeafLabels": False,
+        "styleNodeEdges": False,
+        "subtreeIds": None,
+        "type": "rc",
+        "title": "Tree",
+        "labelField": "id",
+        "file": file_id,
+    }
+
+
+def build_microreact_project_json(
+    csv_data: str,
+    tree_data: str | None = None,
+    project_name: str = "AMR Microreact Project",
+) -> dict:
+    """Build a Microreact .microreact JSON document with embedded data."""
+    csv_bytes = csv_data.encode()
+    csv_b64 = base64.b64encode(csv_bytes).decode()
+
+    # Parse CSV header to build table column definitions
+    first_line = csv_data.split("\n")[0]
+    columns = [{"field": col.strip(), "fixed": False} for col in first_line.split(",")]
+
+    project = {
+        "schema": "https://microreact.org/schema/v1.json",
+        "charts": {},
+        "datasets": {
+            "dataset-1": {
+                "id": "dataset-1",
+                "file": "data-file-1",
+                "idFieldName": "id",
+            }
+        },
+        "files": {
+            "data-file-1": {
+                "id": "data-file-1",
+                "format": "text/csv",
+                "name": "metadata.csv",
+                "type": "data",
+                "size": len(csv_bytes),
+                "blob": f"data:application/octet-stream;base64,{csv_b64}",
+            }
+        },
+        "filters": {
+            "paneFilters": [],
+            "dataFilters": [],
+            "chartFilters": [],
+            "searchOperator": "includes",
+            "searchValue": "",
+            "selection": [],
+            "selectionBreakdownField": None,
+        },
+        "maps": {},
+        "matrices": {},
+        "meta": {"name": project_name},
+        "networks": {},
+        "notes": {},
+        "slicers": {},
+        "styles": {
+            "coloursField": None,
+            "colourPalettes": [],
+            "defaultColour": "transparent",
+            "defaultShape": "circle",
+            "colourSettings": {},
+            "labelsField": None,
+            "legendDirection": "row",
+            "shapesField": None,
+            "shapePalettes": [],
+        },
+        "tables": {
+            "table-1": {
+                "displayMode": "cosy",
+                "hideUnselected": False,
+                "dataset": "dataset-1",
+                "file": "data-file-1",
+                "title": "AMR Metadata",
+                "paneId": "table-1",
+                "columns": columns,
+            }
+        },
+        "timelines": {},
+        "views": [],
+    }
+
+    has_tree = tree_data is not None
+    if has_tree:
+        tree_bytes = tree_data.encode()
+        tree_b64 = base64.b64encode(tree_bytes).decode()
+        project["files"]["tree-file-1"] = {
+            "id": "tree-file-1",
+            "format": "text/x-nh",
+            "name": "tree.nwk",
+            "type": "tree",
+            "size": len(tree_bytes),
+            "blob": f"data:application/octet-stream;base64,{tree_b64}",
+        }
+        project["trees"] = {
+            "tree-1": _build_tree_config("tree-file-1"),
+        }
+
+    project["panes"] = _build_pane_layout(has_tree)
 
     return project
 
