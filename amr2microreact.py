@@ -439,6 +439,7 @@ def build_microreact_project_json(
         "timelines": {},
     }
 
+    # Build pane layout
     if tree_data:
         tree_bytes = tree_data.encode()
         tree_b64 = base64.b64encode(tree_bytes).decode()
@@ -454,8 +455,69 @@ def build_microreact_project_json(
             "tree-1": {
                 "file": "tree-file-1",
                 "title": "Phylogenetic Tree",
+                "type": "rc",
             }
         }
+        # Layout: tree left, table right
+        layout_children = [
+            {
+                "type": "tabset",
+                "weight": 60,
+                "children": [
+                    {"type": "tab", "id": "tree-1", "name": "Phylogenetic Tree", "component": "Tree"}
+                ],
+            },
+            {
+                "type": "tabset",
+                "weight": 40,
+                "children": [
+                    {"type": "tab", "id": "table-1", "name": "AMR Metadata", "component": "Table"}
+                ],
+            },
+        ]
+    else:
+        # Layout: table only
+        layout_children = [
+            {
+                "type": "tabset",
+                "children": [
+                    {"type": "tab", "id": "table-1", "name": "AMR Metadata", "component": "Table"}
+                ],
+            },
+        ]
+
+    project["panes"] = {
+        "model": {
+            "global": {
+                "splitterSize": 2,
+                "tabEnableClose": False,
+                "tabSetHeaderHeight": 1,
+                "tabSetTabStripHeight": 1,
+                "tabSetMinWidth": 160,
+                "tabSetMinHeight": 160,
+                "borderMinSize": 160,
+                "borderBarSize": 20,
+                "borderEnableDrop": False,
+            },
+            "borders": [
+                {
+                    "type": "border",
+                    "size": 240,
+                    "location": "right",
+                    "children": [
+                        {"type": "tab", "id": "--mr-legend-pane", "name": "Legend", "component": "Legend", "enableClose": False, "enableDrag": False},
+                        {"type": "tab", "id": "--mr-selection-pane", "name": "Selection", "component": "Selection", "enableClose": False, "enableDrag": False},
+                        {"type": "tab", "id": "--mr-history-pane", "name": "History", "component": "History", "enableClose": False, "enableDrag": False},
+                        {"type": "tab", "id": "--mr-views-pane", "name": "Views", "component": "Views", "enableClose": False, "enableDrag": False},
+                    ],
+                }
+            ],
+            "layout": {
+                "type": "row",
+                "children": layout_children,
+            },
+        }
+    }
 
     return project
 
