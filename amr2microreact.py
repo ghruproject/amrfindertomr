@@ -19,10 +19,15 @@ Usage:
 """
 
 import argparse
+import base64
 import csv
+import json
+import os
 import sys
 from collections import defaultdict
 from pathlib import Path
+from urllib.request import Request, urlopen
+from urllib.error import HTTPError
 
 
 # ---------------------------------------------------------------------------
@@ -339,6 +344,139 @@ def write_csv(
         print("  Microreact __colour columns included", file=sys.stderr)
 
 
+def build_csv_string(
+    samples: dict,
+    drug_classes: list[str],
+    gene_list: list[str],
+    add_colours: bool = True,
+) -> str:
+    """Build CSV content as a string (for API upload)."""
+    import io
+
+    header = ["id"]
+    for dc in drug_classes:
+        col = sanitize_column_name(dc)
+        header.append(col)
+        if add_colours:
+            header.append(f"{col}__colour")
+    for gene in gene_list:
+        col = sanitize_column_name(gene)
+        header.append(col)
+        if add_colours:
+            header.append(f"{col}__colour")
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(header)
+
+    for sample_name in sorted(samples.keys()):
+        sdata = samples[sample_name]
+        row = [sample_name]
+        for dc in drug_classes:
+            genes_in_class = sdata["classes"].get(dc, set())
+            summary = ",".join(sorted(genes_in_class)) if genes_in_class else "NA"
+            row.append(summary)
+            if add_colours:
+                row.append(COLOUR_HAS_GENES if genes_in_class else COLOUR_NO_GENES)
+        for gene in gene_list:
+            present = gene in sdata["genes"]
+            row.append("yes" if present else "no")
+            if add_colours:
+                row.append(COLOUR_PRESENT if present else COLOUR_ABSENT)
+        writer.writerow(row)
+
+    return buf.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# Microreact API integration
+# ---------------------------------------------------------------------------
+
+MICROREACT_API_URL = "https://microreact.org/api/projects/create"
+
+
+def build_microreact_project_json(
+    csv_data: str,
+    tree_data: str | None = None,
+    project_name: str = "AMR Microreact Project",
+) -> dict:
+    """Build a Microreact .microreact JSON document with embedded data."""
+    csv_b64 = base64.b64encode(csv_data.encode()).decode()
+
+    project = {
+        "schema": "https://microreact.org/schema/v1.json",
+        "meta": {"name": project_name},
+        "datasets": {
+            "dataset-1": {
+                "file": "data-file-1",
+                "idFieldName": "id",
+            }
+        },
+        "files": {
+            "data-file-1": {
+                "id": "data-file-1",
+                "format": "text/csv",
+                "name": "metadata.csv",
+                "url": f"data:text/csv;base64,{csv_b64}",
+            }
+        },
+        "tables": {
+            "table-1": {
+                "dataset": "dataset-1",
+                "title": "AMR Metadata",
+            }
+        },
+    }
+
+    if tree_data:
+        tree_b64 = base64.b64encode(tree_data.encode()).decode()
+        project["files"]["tree-file-1"] = {
+            "id": "tree-file-1",
+            "format": "text/x-nh",
+            "name": "tree.nwk",
+            "url": f"data:text/x-nh;base64,{tree_b64}",
+        }
+        project["trees"] = {
+            "tree-1": {
+                "file": "tree-file-1",
+                "title": "Phylogenetic Tree",
+            }
+        }
+
+    return project
+
+
+def upload_to_microreact(
+    csv_data: str,
+    api_key: str,
+    tree_data: str | None = None,
+    project_name: str = "AMR Microreact Project",
+) -> dict:
+    """Upload data to Microreact and return the response with project URL.
+
+    Returns dict with 'url' key on success, or raises an exception.
+    """
+    project_json = build_microreact_project_json(csv_data, tree_data, project_name)
+    body = json.dumps(project_json).encode("utf-8")
+
+    req = Request(
+        MICROREACT_API_URL,
+        data=body,
+        headers={
+            "Content-Type": "application/json; charset=utf-8",
+            "Access-Token": api_key,
+        },
+        method="POST",
+    )
+
+    try:
+        with urlopen(req) as resp:
+            return json.loads(resp.read().decode())
+    except HTTPError as e:
+        error_body = e.read().decode() if e.fp else str(e)
+        raise RuntimeError(f"Microreact API error ({e.code}): {error_body}") from e
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Convert AMR tool output to Microreact metadata CSV. "
@@ -392,6 +530,21 @@ def main():
         action="store_true",
         help="Do not add __colour columns for Microreact",
     )
+    parser.add_argument(
+        "--tree",
+        default=None,
+        help="Newick tree file to include when uploading to Microreact",
+    )
+    parser.add_argument(
+        "--microreact-api-key",
+        default=None,
+        help="Microreact API access token (or set MICROREACT_API_KEY env var)",
+    )
+    parser.add_argument(
+        "--project-name",
+        default="AMR Microreact Project",
+        help="Name for the Microreact project (default: 'AMR Microreact Project')",
+    )
     args = parser.parse_args()
 
     input_files = collect_inputs(args.input)
@@ -413,11 +566,30 @@ def main():
 
     print(f"  Formats detected: {', '.join(sorted(formats))}", file=sys.stderr)
 
-    write_csv(
-        samples, drug_classes, gene_list,
-        Path(args.output),
-        add_colours=not args.no_colours,
-    )
+    add_colours = not args.no_colours
+    write_csv(samples, drug_classes, gene_list, Path(args.output), add_colours=add_colours)
+
+    # Microreact API upload
+    api_key = args.microreact_api_key or os.environ.get("MICROREACT_API_KEY")
+    if api_key:
+        csv_data = build_csv_string(samples, drug_classes, gene_list, add_colours=add_colours)
+
+        tree_data = None
+        if args.tree:
+            tree_path = Path(args.tree)
+            if tree_path.is_file():
+                tree_data = tree_path.read_text()
+            else:
+                print(f"Warning: Tree file {args.tree} not found, uploading without tree", file=sys.stderr)
+
+        print("Uploading to Microreact...", file=sys.stderr)
+        try:
+            result = upload_to_microreact(csv_data, api_key, tree_data, args.project_name)
+            url = result.get("url", "")
+            print(f"Microreact project created: {url}", file=sys.stderr)
+        except RuntimeError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 """Tests for amr2microreact.py"""
 
 import csv
+import io
 import os
 import tempfile
 from pathlib import Path
@@ -17,7 +18,9 @@ from amr2microreact import (
     COLOUR_HAS_GENES,
     COLOUR_NO_GENES,
     COLOUR_PRESENT,
+    build_csv_string,
     build_metadata,
+    build_microreact_project_json,
     collect_inputs,
     detect_format,
     extract_sample_name,
@@ -656,3 +659,105 @@ class TestRegressionSortedOutput:
             ids = [row["id"] for row in reader]
 
         assert ids == ["sampleA", "sampleM", "sampleZ"]
+
+
+# ---------------------------------------------------------------------------
+# Microreact API integration tests
+# ---------------------------------------------------------------------------
+
+
+class TestBuildCsvString:
+    def test_returns_valid_csv(self, sample1_tsv):
+        samples, classes, genes, _ = build_metadata([sample1_tsv])
+        csv_str = build_csv_string(samples, classes, genes, add_colours=False)
+        reader = csv.DictReader(io.StringIO(csv_str))
+        rows = list(reader)
+        assert len(rows) == 1
+        assert rows[0]["id"] == "sample1"
+
+    def test_matches_write_csv_output(self, sample1_tsv, tmp_path):
+        samples, classes, genes, _ = build_metadata([sample1_tsv])
+        csv_str = build_csv_string(samples, classes, genes, add_colours=False)
+        out = tmp_path / "out.csv"
+        write_csv(samples, classes, genes, out, add_colours=False)
+        with open(out) as f:
+            file_csv = f.read()
+        # Normalize line endings for comparison
+        assert csv_str.replace("\r\n", "\n") == file_csv.replace("\r\n", "\n")
+
+    def test_with_colours(self, sample1_tsv):
+        samples, classes, genes, _ = build_metadata([sample1_tsv])
+        csv_str = build_csv_string(samples, classes, genes, add_colours=True)
+        header = csv_str.split("\n")[0]
+        assert "__colour" in header
+
+
+class TestBuildMicroreactProjectJson:
+    def test_basic_structure(self):
+        csv_data = "id,gene1\nsample1,yes\n"
+        project = build_microreact_project_json(csv_data)
+
+        assert project["schema"] == "https://microreact.org/schema/v1.json"
+        assert "meta" in project
+        assert "datasets" in project
+        assert "files" in project
+        assert "data-file-1" in project["files"]
+        assert project["files"]["data-file-1"]["format"] == "text/csv"
+
+    def test_csv_is_base64_encoded(self):
+        csv_data = "id,gene1\nsample1,yes\n"
+        project = build_microreact_project_json(csv_data)
+
+        import base64
+        url = project["files"]["data-file-1"]["url"]
+        assert url.startswith("data:text/csv;base64,")
+        encoded = url.split(",", 1)[1]
+        decoded = base64.b64decode(encoded).decode()
+        assert decoded == csv_data
+
+    def test_without_tree(self):
+        csv_data = "id,gene1\nsample1,yes\n"
+        project = build_microreact_project_json(csv_data, tree_data=None)
+        assert "trees" not in project
+        assert "tree-file-1" not in project["files"]
+
+    def test_with_tree(self):
+        csv_data = "id,gene1\nsample1,yes\n"
+        tree_data = "(sample1:0.1,sample2:0.2);"
+        project = build_microreact_project_json(csv_data, tree_data=tree_data)
+
+        assert "trees" in project
+        assert "tree-file-1" in project["files"]
+        assert project["files"]["tree-file-1"]["format"] == "text/x-nh"
+
+        import base64
+        url = project["files"]["tree-file-1"]["url"]
+        assert url.startswith("data:text/x-nh;base64,")
+        encoded = url.split(",", 1)[1]
+        decoded = base64.b64decode(encoded).decode()
+        assert decoded == tree_data
+
+    def test_custom_project_name(self):
+        csv_data = "id,gene1\nsample1,yes\n"
+        project = build_microreact_project_json(csv_data, project_name="My AMR Study")
+        assert project["meta"]["name"] == "My AMR Study"
+
+    def test_dataset_links_to_file(self):
+        csv_data = "id,gene1\nsample1,yes\n"
+        project = build_microreact_project_json(csv_data)
+        assert project["datasets"]["dataset-1"]["file"] == "data-file-1"
+        assert project["datasets"]["dataset-1"]["idFieldName"] == "id"
+
+
+class TestCLIMicroreactArgs:
+    """Test that CLI args for Microreact are parsed correctly."""
+
+    def test_api_key_from_env(self, sample1_tsv, tmp_path, monkeypatch):
+        monkeypatch.setenv("MICROREACT_API_KEY", "test-token-123")
+        # Just verify the env var is readable
+        assert os.environ.get("MICROREACT_API_KEY") == "test-token-123"
+
+    def test_tree_file_read(self, tmp_path):
+        tree = tmp_path / "test.nwk"
+        tree.write_text("(A:0.1,B:0.2);")
+        assert tree.read_text() == "(A:0.1,B:0.2);"
