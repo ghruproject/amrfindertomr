@@ -1,3 +1,8 @@
+> [!IMPORTANT]
+> **Development has moved to GitLab.**
+> The maintained repository is [cgps/ghru/amrfindertomr](https://gitlab.com/cgps/ghru/amrfindertomr). Please use GitLab for the latest code, issues, and merge requests.
+> This GitHub copy is retained for existing links and migration checks.
+
 <p align="center">
   <img src="logo.svg" alt="amr2microreact logo" width="120"/>
 </p>
